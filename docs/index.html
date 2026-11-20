@@ -17,20 +17,17 @@
 <div class="shell" id="page"><p class="crumb">불러오는 중...</p></div>
 <script>
 Site.start(async acc => {
-  const db = PlazaDB.db, n = { study: 0, rec: 0, review: 0, visit: 0, bid: 0, wk: '' };
+  const db = PlazaDB.db, n = { study: 0, review: 0, visit: 0, bid: 0 };
   try {
-    const [st, pr, rc] = await Promise.all([db.collection('study').list('path'), db.collection('props').list('path,data->stage'), db.collection('recs').list('path')]);
-    n.study = st.length; n.rec = rc.length;
-    pr.forEach(r => { if (r.stage in n) n[r.stage]++; });
+    const [st, pr] = await Promise.all([db.collection('study').list('path'), db.collection('props').list('path,data->stage')]);
+    n.study = st.length; pr.forEach(r => { if (r.stage in n) n[r.stage]++; });
   } catch (_) {}
-  const stat = (v, l) => '<div><b>' + v + '</b><span>' + l + '</span></div>';
+  const go = '<span class="go" aria-hidden="true">→</span>';
   return '<h1>어디로 갈까요?</h1><p class="lead">공부한 내용과 같이 보는 물건을 한곳에 모았습니다.</p>' +
-    '<div class="tiles">' +
-    '<a class="tile study" href="study/"><div class="top"><span class="k">STUDY</span><span class="t">스터디 통합본</span><span class="d">강의 노트, 체크리스트, 수익 계산기</span></div>' +
-      '<div class="stats">' + stat(n.study, '노트') + stat('3주차', '진도') + stat('87', '체크 항목') + '</div><span class="go">들어가기 <span aria-hidden="true">→</span></span></a>' +
-    '<a class="tile plaza" href="plaza/"><div class="top"><span class="k">PLAZA</span><span class="t">부동산광장</span><span class="d">추천 물건, 같이 검토, 임장과 입찰 기록</span></div>' +
-      '<div class="stats">' + stat(n.review, '검토 중') + stat(n.visit, '임장') + stat(n.bid, '입찰·계약') + '</div><span class="go">들어가기 <span aria-hidden="true">→</span></span></a>' +
-    '</div>' + Site.membersBox() + '<p class="foot">로그인한 멤버에게만 내용이 보입니다.</p>';
+    '<ul class="entries boxed">' +
+    '<li><a href="study/"><span class="t">스터디 통합본</span><span class="d">강의 노트와 체크리스트, 계산기</span>' + go + '<span class="n">노트 ' + n.study + '개</span></a></li>' +
+    '<li><a href="plaza/"><span class="t">부동산광장</span><span class="d">매일 추천 물건, 같이 검토, 임장과 입찰 기록</span>' + go + '<span class="n">검토 ' + n.review + ' · 임장 ' + n.visit + ' · 입찰 ' + n.bid + '</span></a></li>' +
+    '</ul>' + Site.membersBox() + '<p class="foot">로그인한 멤버에게만 내용이 보입니다.</p>';
 });
 </script>
 </body>
