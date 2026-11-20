@@ -110,3 +110,9 @@ grant execute on function public.claude_import(text, jsonb) to anon, authenticat
 do $$ begin
   alter publication supabase_realtime add table public.docs;
 exception when duplicate_object then null; end $$;
+
+-- 8. 로그인한 사용자에게 표 사용 권한 (행 단위 보안이 실제 범위를 막음)
+grant select, insert, update, delete on public.docs to authenticated;
+grant select, insert, delete on public.allowed_emails to authenticated;
+grant execute on function public.doc_merge(text, jsonb) to authenticated;
+grant execute on function public.plaza_access() to authenticated;
