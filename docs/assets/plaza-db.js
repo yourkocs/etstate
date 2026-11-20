@@ -1,8 +1,10 @@
-/* 부동산광장 저장소 연결: Supabase의 docs 표 하나를 문서 저장소처럼 씁니다.
-   화면 코드는 db.doc(경로) / db.collection(경로) 모양 그대로 사용합니다. */
+/* 사이트 공통 연결: 로그인과 데이터 저장 (Supabase).
+   데이터는 docs 표 하나에 경로(props/아이디, recs/아이디, study/npl ...)로 저장하고,
+   화면 코드는 db.doc(경로) / db.collection(경로) 모양으로 씁니다. */
 (function(){
   const cfg = window.PLAZA_CONFIG || {};
-  const sb = window.supabase.createClient(cfg.url, cfg.key, { auth: { persistSession: true, detectSessionInUrl: true, flowType: 'implicit' } });
+  if (!cfg.url || !cfg.key || !window.supabase) { window.PlazaDB = null; return; }
+  const sb = window.supabase.createClient(cfg.url, cfg.key, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } });
   const parentOf = p => p.split('/').slice(0, -1).join('/');
   const snapDoc = (path, row) => ({ id: path.split('/').pop(), exists: !!row, data: () => (row ? row.data : undefined) });
   const chk = r => { if (r.error) throw r.error; return r.data; };
@@ -21,6 +23,7 @@
   function collection(coll){
     return {
       async add(data){ const d = doc(coll + '/' + rid()); await d.set(data); return d; },
+      async list(fields){ return chk(await sb.from('docs').select(fields || 'path,data').eq('coll', coll)); },
       onSnapshot(cb, onErr){
         let alive = true, timer = null;
         const load = async () => {
@@ -34,7 +37,6 @@
           .on('postgres_changes', { event: '*', schema: 'public', table: 'docs', filter: 'coll=eq.' + coll },
               () => { clearTimeout(timer); timer = setTimeout(load, 250); })
           .subscribe();
-        /* 실시간 연결이 끊긴 사이 바뀐 내용을 놓치지 않도록, 화면으로 돌아올 때 다시 읽습니다. */
         const vis = () => { if (document.visibilityState === 'visible') load(); };
         document.addEventListener('visibilitychange', vis);
         return () => { alive = false; clearTimeout(timer); sb.removeChannel(ch); document.removeEventListener('visibilitychange', vis); };
@@ -44,16 +46,20 @@
 
   /* ---------- 로그인 ---------- */
   async function session(){ const { data } = await sb.auth.getSession(); return data.session; }
-  async function sendLink(email){
-    const { error } = await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: location.origin + location.pathname, shouldCreateUser: true } });
-    if (error) throw error;
+  async function signIn(email, password){ const { error } = await sb.auth.signInWithPassword({ email: email.trim(), password }); if (error) throw error; }
+  async function signUp(email, password){
+    const { data, error } = await sb.auth.signUp({ email: email.trim(), password, options: { emailRedirectTo: location.origin + location.pathname } });
+    if (error) throw error; return !!data.session;
   }
-  async function signOut(){ await sb.auth.signOut(); location.reload(); }
+  async function resetPassword(email){ const { error } = await sb.auth.resetPasswordForEmail(email.trim(), { redirectTo: location.origin + location.pathname }); if (error) throw error; }
+  async function setPassword(password){ const { error } = await sb.auth.updateUser({ password }); if (error) throw error; }
+  async function signOut(){ await sb.auth.signOut(); }
   /* 허용 목록이 비어 있으면 처음 로그인한 사람이 관리자가 됩니다. */
   async function access(){ const r = await sb.rpc('plaza_access'); if (r.error) throw r.error; return r.data; }
   async function allowList(){ return chk(await sb.from('allowed_emails').select('email,admin').order('email')); }
   async function allowAdd(email){ chk(await sb.from('allowed_emails').insert({ email: email.trim().toLowerCase() })); }
   async function allowRemove(email){ chk(await sb.from('allowed_emails').delete().eq('email', email)); }
 
-  window.PlazaDB = { sb, db: { doc, collection }, session, sendLink, signOut, access, allowList, allowAdd, allowRemove };
+  window.PlazaDB = { sb, db: { doc, collection }, session, signIn, signUp, resetPassword, setPassword, signOut, access, allowList, allowAdd, allowRemove,
+    onAuth: cb => sb.auth.onAuthStateChange((ev, s) => cb(ev, s)) };
 })();
