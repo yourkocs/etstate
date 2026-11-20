@@ -16,7 +16,8 @@ def sub(old, new, count=1):
     s = s.replace(old, new, count)
 
 
-HEAD = '''<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+HEAD = '''<script src="../assets/kakao-out.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script src="../assets/config.js"></script>
 <script src="../assets/plaza-db.js"></script>
 <meta name="robots" content="noindex,nofollow">
