@@ -35,6 +35,7 @@ s = s[:i] + '''  let acc=null;
   if(!window.PlazaDB){ db=null; S.me='me'; S.members=['me']; S.ready=true; clearTimeout(timer); return render(true); }
   try{ const ses=await PlazaDB.session(); if(!ses){ location.replace('../'); S.gate=true; return; } acc=await PlazaDB.access(); }catch(e){ clearTimeout(timer); return loginView('연결하지 못했습니다. '+((e&&e.message)||'')); }
   if(!acc.member){ clearTimeout(timer); return loginView('이 이메일('+acc.email+')은 아직 멤버로 등록되지 않았습니다. 관리자에게 이메일 등록을 요청한 뒤 다시 열어 주세요.'); }
+  if(acc.plaza===false){ clearTimeout(timer); return loginView('이 계정은 부동산광장을 볼 수 있는 권한이 없습니다. 필요하면 관리자에게 요청해 주세요.'); }
   db=PlazaDB.db; S.admin=!!acc.admin; S.email=acc.email;
   try{ S.me=await whoAmI(acc); }catch(e){ clearTimeout(timer); return loginView('멤버 정보를 읽지 못했습니다. '+((e&&e.message)||'')); }
   if(!S.me){ clearTimeout(timer); return; }

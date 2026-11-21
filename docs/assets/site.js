@@ -42,13 +42,19 @@
   }
 
   /* ---------- 멤버 관리 (관리자만) ---------- */
-  async function loadAllow(){ try { S.allow = await PlazaDB.allowList(); } catch (_) { S.allow = []; } const el = $('#members'); if (el) el.outerHTML = membersBox(); }
+  async function loadAllow(){ try { S.allow = await PlazaDB.allowList(); } catch (_) { S.allow = []; } const put = n => { const el = $('#members'); if (el) el.outerHTML = membersBox(); else if (n) setTimeout(() => put(n - 1), 150); }; put(20); }
   function membersBox(){
     if (!S.acc || !S.acc.admin) return '';
-    if (!S.allow) { S.allow = []; loadAllow(); }
-    return '<section id="members"><h2>멤버 관리 · ' + S.allow.length + '명</h2><p class="lead" style="font-size:14px">여기 등록한 이메일만 내용을 볼 수 있습니다. 이메일을 추가한 뒤 사이트 주소를 보내 주고, "처음이면 가입하기"로 비밀번호를 정하라고 알려 주세요.</p>' +
-      '<ul class="members" style="margin-top:12px">' + S.allow.map(a => '<li><span>' + esc(a.email) + (a.admin ? '<small>관리자</small>' : '') + '</span>' + (a.email === S.acc.email ? '' : '<button class="link" data-del="' + esc(a.email) + '">삭제</button>') + '</li>').join('') + '</ul>' +
-      '<div class="addrow"><input id="m-add" type="email" placeholder="추가할 이메일" autocomplete="off"><button class="btn ghost" data-act="add">추가</button></div><p class="msg" id="m-msg"></p></section>';
+    if (!S.allow) { S.allow = Object.assign([], { perms: true }); loadAllow(); }
+    const P = S.allow.perms, tick = (a, k, label) => '<label class="perm"><input type="checkbox" data-perm="' + k + '" data-email="' + esc(a.email) + '"' + (a.admin || a[k] !== false ? ' checked' : '') + (a.admin ? ' disabled' : '') + '>' + label + '</label>';
+    return '<section id="members"><h2>멤버 관리 · ' + S.allow.length + '명</h2><p class="lead" style="font-size:14px">여기 등록한 이메일만 내용을 볼 수 있습니다. 멤버마다 스터디 통합본과 부동산광장을 볼 수 있는지 따로 정합니다. 이메일을 추가한 뒤 사이트 주소를 보내 주고, "처음이면 가입하기"로 비밀번호를 정하라고 알려 주세요.</p>' +
+      (P ? '' : '<div class="box" style="margin-top:12px">멤버별 권한 설정은 Supabase에서 설정 SQL을 한 번 더 실행한 뒤부터 쓸 수 있습니다. 그 전에는 등록된 멤버 모두가 둘 다 볼 수 있습니다.</div>') +
+      '<ul class="members" style="margin-top:12px">' + S.allow.map(a => '<li><span>' + esc(a.email) + (a.admin ? '<small>관리자</small>' : '') + '</span>' +
+        (P ? '<span class="perms">' + tick(a, 'study', '스터디') + tick(a, 'plaza', '광장') + '</span>' : '') +
+        (a.email === S.acc.email ? '' : '<button class="link" data-del="' + esc(a.email) + '">삭제</button>') + '</li>').join('') + '</ul>' +
+      '<div class="addrow"><input id="m-add" type="email" placeholder="추가할 이메일" autocomplete="off">' +
+      (P ? '<span class="perms"><label class="perm"><input type="checkbox" id="m-study" checked>스터디</label><label class="perm"><input type="checkbox" id="m-plaza" checked>광장</label></span>' : '') +
+      '<button class="btn ghost" data-act="add">추가</button></div><p class="msg" id="m-msg"></p></section>';
   }
 
   document.addEventListener('submit', e => { if (e.target.dataset.form === 'auth') { e.preventDefault(); onAuthSubmit(); } });
@@ -56,9 +62,18 @@
     const md = e.target.closest('[data-mode]'); if (md) { mode = md.dataset.mode; return loginView(); }
     const a = e.target.closest('[data-act]'), d = e.target.closest('[data-del]');
     if (a && a.dataset.act === 'out') { await PlazaDB.signOut(); S.acc = null; mode = 'in'; return loginView(); }
-    if (a && a.dataset.act === 'add') { const i = $('#m-add'), v = i && i.value.trim(); if (!v) return; try { await PlazaDB.allowAdd(v); loadAllow(); } catch (err) { $('#m-msg').textContent = '추가하지 못했습니다. ' + ((err && err.message) || ''); } }
+    if (a && a.dataset.act === 'add') { const i = $('#m-add'), v = i && i.value.trim(); if (!v) return; try { const sc = $('#m-study'), pc = $('#m-plaza'); await PlazaDB.allowAdd(v, sc ? { study: sc.checked, plaza: pc.checked } : null); loadAllow(); } catch (err) { $('#m-msg').textContent = '추가하지 못했습니다. ' + ((err && err.message) || ''); } }
     if (d) { if (d.dataset.sure !== '1') { d.dataset.sure = '1'; d.textContent = '한 번 더 누르면 삭제'; return; } try { await PlazaDB.allowRemove(d.dataset.del); loadAllow(); } catch (_) {} }
   });
+
+  document.addEventListener('change', async e => {
+    const t = e.target; if (!t.dataset || !t.dataset.perm) return;
+    const m = $('#m-msg');
+    try { await PlazaDB.allowSet(t.dataset.email, { [t.dataset.perm]: t.checked }); if (m) m.textContent = '저장했습니다. 그 멤버가 화면을 새로 열면 적용됩니다.'; }
+    catch (err) { t.checked = !t.checked; if (m) m.textContent = '저장하지 못했습니다. ' + ((err && err.message) || ''); }
+  });
+  /* 권한이 없는 영역을 열었을 때 보여 줄 화면 */
+  function denied(what){ return '<p class="crumb"><a href="' + root() + '">처음</a></p><h1>열람 권한이 없습니다</h1><p class="lead">이 계정은 ' + what + '을 볼 수 있는 권한이 없습니다. 필요하면 관리자에게 요청해 주세요.</p>'; }
 
   /* ---------- 시작 ---------- */
   let draw = null;
@@ -71,5 +86,5 @@
     if (!S.acc.member) return page('<h1>등록 대기 중</h1><p class="lead">' + esc(S.acc.email) + ' 계정은 아직 멤버로 등록되지 않았습니다. 관리자에게 이 이메일을 등록해 달라고 한 뒤 다시 열어 주세요.</p>');
     page(await draw(S.acc, PlazaDB.db));
   }
-  window.Site = { start(fn){ draw = fn; if (window.PlazaDB) PlazaDB.onAuth(ev => { if (ev === 'PASSWORD_RECOVERY') { mode = 'newpw'; loginView(); } }); boot(); }, esc, page, membersBox, acc: () => S.acc };
+  window.Site = { denied, start(fn){ draw = fn; if (window.PlazaDB) PlazaDB.onAuth(ev => { if (ev === 'PASSWORD_RECOVERY') { mode = 'newpw'; loginView(); } }); boot(); }, esc, page, membersBox, acc: () => S.acc };
 })();

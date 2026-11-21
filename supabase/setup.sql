@@ -7,6 +7,9 @@ create table if not exists public.allowed_emails (
   admin boolean not null default false,
   added_at timestamptz not null default now()
 );
+-- 멤버별 열람 권한: 스터디 통합본, 부동산광장 (관리자는 항상 둘 다)
+alter table public.allowed_emails add column if not exists study boolean not null default true;
+alter table public.allowed_emails add column if not exists plaza boolean not null default true;
 
 -- 2. 모든 데이터를 담는 문서 표 (경로 = props/아이디, recs/아이디, members/아이디 ...)
 create table if not exists public.docs (
@@ -32,6 +35,16 @@ language sql stable security definer set search_path = public as $$
   select exists (select 1 from public.allowed_emails where email = public.my_email() and admin)
 $$;
 
+create or replace function public.can_study() returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.allowed_emails where email = public.my_email() and (study or admin))
+$$;
+
+create or replace function public.can_plaza() returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.allowed_emails where email = public.my_email() and (plaza or admin))
+$$;
+
 -- 처음 로그인한 사람이 관리자가 되고, 이후에는 허용 여부만 알려 줍니다.
 create or replace function public.plaza_access() returns jsonb
 language plpgsql security definer set search_path = public as $$
@@ -43,7 +56,8 @@ begin
   if not exists (select 1 from public.allowed_emails) then
     insert into public.allowed_emails (email, admin) values (e, true);
   end if;
-  return jsonb_build_object('member', public.is_member(), 'admin', public.is_admin(), 'email', e, 'uid', auth.uid());
+  return jsonb_build_object('member', public.is_member(), 'admin', public.is_admin(), 'email', e, 'uid', auth.uid(),
+    'study', public.can_study(), 'plaza', public.can_plaza());
 end $$;
 
 -- 4. 행 단위 보안: 허용된 멤버만 읽고 씀
@@ -51,8 +65,10 @@ alter table public.docs enable row level security;
 alter table public.allowed_emails enable row level security;
 
 drop policy if exists docs_member_all on public.docs;
+-- 스터디 문서(study/...)는 스터디 권한, 그 밖의 문서는 부동산광장 권한이 있어야 읽고 씀
 create policy docs_member_all on public.docs for all to authenticated
-  using (public.is_member()) with check (public.is_member());
+  using (case when path like 'study/%' then public.can_study() else public.can_plaza() end)
+  with check (case when path like 'study/%' then public.can_study() else public.can_plaza() end);
 
 drop policy if exists allow_read on public.allowed_emails;
 create policy allow_read on public.allowed_emails for select to authenticated using (public.is_member());
@@ -60,6 +76,8 @@ drop policy if exists allow_admin_ins on public.allowed_emails;
 create policy allow_admin_ins on public.allowed_emails for insert to authenticated with check (public.is_admin());
 drop policy if exists allow_admin_del on public.allowed_emails;
 create policy allow_admin_del on public.allowed_emails for delete to authenticated using (public.is_admin() and email <> public.my_email());
+drop policy if exists allow_admin_upd on public.allowed_emails;
+create policy allow_admin_upd on public.allowed_emails for update to authenticated using (public.is_admin()) with check (public.is_admin());
 
 -- 5. 깊은 병합 업데이트 (체크 하나만 바꿔도 다른 체크가 지워지지 않게)
 create or replace function public.jsonb_deep_merge(a jsonb, b jsonb) returns jsonb
@@ -114,5 +132,6 @@ exception when duplicate_object then null; end $$;
 -- 8. 로그인한 사용자에게 표 사용 권한 (행 단위 보안이 실제 범위를 막음)
 grant select, insert, update, delete on public.docs to authenticated;
 grant select, insert, delete on public.allowed_emails to authenticated;
+grant update (study, plaza) on public.allowed_emails to authenticated;
 grant execute on function public.doc_merge(text, jsonb) to authenticated;
 grant execute on function public.plaza_access() to authenticated;

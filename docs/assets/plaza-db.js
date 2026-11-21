@@ -56,10 +56,16 @@
   async function signOut(){ await sb.auth.signOut(); }
   /* 허용 목록이 비어 있으면 처음 로그인한 사람이 관리자가 됩니다. */
   async function access(){ const r = await sb.rpc('plaza_access'); if (r.error) throw r.error; return r.data; }
-  async function allowList(){ return chk(await sb.from('allowed_emails').select('email,admin').order('email')); }
-  async function allowAdd(email){ chk(await sb.from('allowed_emails').insert({ email: email.trim().toLowerCase() })); }
+  /* study·plaza 열이 아직 없으면(설정 SQL 실행 전) 예전 방식으로 읽고 perms=false 로 알립니다. */
+  async function allowList(){
+    const r = await sb.from('allowed_emails').select('email,admin,study,plaza').order('email');
+    if (!r.error) return Object.assign(r.data, { perms: true });
+    return Object.assign(chk(await sb.from('allowed_emails').select('email,admin').order('email')), { perms: false });
+  }
+  async function allowAdd(email, perm){ chk(await sb.from('allowed_emails').insert(Object.assign({ email: email.trim().toLowerCase() }, perm || {}))); }
+  async function allowSet(email, patch){ chk(await sb.from('allowed_emails').update(patch).eq('email', email)); }
   async function allowRemove(email){ chk(await sb.from('allowed_emails').delete().eq('email', email)); }
 
-  window.PlazaDB = { sb, db: { doc, collection }, session, signIn, signUp, resetPassword, setPassword, signOut, access, allowList, allowAdd, allowRemove,
+  window.PlazaDB = { sb, db: { doc, collection }, session, signIn, signUp, resetPassword, setPassword, signOut, access, allowList, allowAdd, allowSet, allowRemove,
     onAuth: cb => sb.auth.onAuthStateChange((ev, s) => cb(ev, s)) };
 })();
