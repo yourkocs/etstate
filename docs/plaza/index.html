@@ -160,10 +160,10 @@ nav button.spot{color:var(--accent);animation:pulse 1.2s ease-in-out infinite;bo
 @keyframes pulse{0%,100%{background:transparent}50%{background:var(--accent-soft)}}
 @media (prefers-reduced-motion:reduce){.guide .box,nav button.spot{animation:none}nav button.spot{background:var(--accent-soft)}}
 </style>
-<script src="../assets/kakao-out.js?v=11221810"></script>
+<script src="../assets/kakao-out.js?v=11221815"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-<script src="../assets/config.js?v=11221810"></script>
-<script src="../assets/plaza-db.js?v=11221810"></script>
+<script src="../assets/config.js?v=11221815"></script>
+<script src="../assets/plaza-db.js?v=11221815"></script>
 <meta name="robots" content="noindex,nofollow">
 <div class="wrap">
 <header class="top">
@@ -235,6 +235,7 @@ const noName=()=>S.live&&S.mloaded&&!S.mnames[S.me]&&!S.names[S.me];
 function nameBox(){ return noName()?'<form class="reqbox" data-form="name"><b>이름을 입력해 주세요</b><p class="sub">다른 멤버 화면에 "멤버" 대신 이 이름이 보입니다. 내 조건 화면에서 언제든 바꿀 수 있습니다.</p><div class="row"><input id="my-name" type="text" maxlength="12" placeholder="예: 홍길동" style="flex:1;min-width:140px"><button class="btn pri" type="submit">저장</button></div></form>':''; }
 function saveName(v){ v=String(v||'').trim().slice(0,12); if(!v) return; S.mnames[S.me]=v; if(db) db.doc('members/'+S.me).update({name:v}).catch(fail); render(true); }
 const today=()=>new Date(Date.now()+9*3600e3).toISOString().slice(0,10);
+const PURGED={}, recPast=t=>r=>{ const d=String(r.saleDate||'').trim().replace(/[./]/g,'-').slice(0,10); return /^\d{4}-\d{2}-\d{2}$/.test(d)&&d<t; };
 function merge(a,b){for(const k in b){if(b[k]&&typeof b[k]==='object'&&!Array.isArray(b[k])){a[k]=merge(Object.assign({},a[k]||{}),b[k]);}else a[k]=b[k];}return a;}
 
 /* ---------- 저장 ---------- */
@@ -651,7 +652,10 @@ async function start(){
   db.doc('data/users/'+S.me+'/prefs').get().then(s=>{ if(s.exists){S.prefs=s.data(); db.doc('members/'+S.me).update({regions:S.prefs.regions||'',types:S.prefs.types||[]}).catch(()=>{}); render();} }).catch(()=>{});
   const bad=e=>{ S.err='데이터를 불러오지 못했습니다. 화면을 다시 열어 주세요.'; S.ready=true; render(true); };
   db.collection('props').onSnapshot(s=>{ S.props={}; s.docs.forEach(d=>{S.props[d.id]=d.data();}); names(Object.values(S.props).map(p=>p.createdBy)); S.ready=true; clearTimeout(timer); render(); },bad);
-  db.collection('recs').onSnapshot(s=>{ S.recs=s.docs.map(d=>Object.assign({id:d.id},d.data())); render(); },bad);
+  db.collection('recs').onSnapshot(s=>{ const t=today(), all=s.docs.map(d=>Object.assign({id:d.id},d.data())), old=all.filter(recPast(t));
+    /* 매각기일이 지난 추천은 목록에서 빼고 저장소에서도 지웁니다 */
+    old.forEach(r=>{ if(!PURGED[r.id]){ PURGED[r.id]=1; db.doc('recs/'+r.id).delete().catch(()=>{}); } });
+    S.recs=all.filter(r=>!recPast(t)(r)); render(); },bad);
   db.collection('members').onSnapshot(s=>{ S.members=s.docs.map(d=>d.id); S.mnames={}; s.docs.forEach(d=>{ const n=(d.data()||{}).name; if(n) S.mnames[d.id]=String(n).slice(0,12); }); S.mloaded=true; names(S.members); render(); },bad);
 }
 render(true); start().then(()=>{ if(!S.gate&&!guideSeen()) guideGo(0); });
