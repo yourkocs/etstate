@@ -160,10 +160,10 @@ nav button.spot{color:var(--accent);animation:pulse 1.2s ease-in-out infinite;bo
 @keyframes pulse{0%,100%{background:transparent}50%{background:var(--accent-soft)}}
 @media (prefers-reduced-motion:reduce){.guide .box,nav button.spot{animation:none}nav button.spot{background:var(--accent-soft)}}
 </style>
-<script src="../assets/kakao-out.js?v=11221815"></script>
+<script src="../assets/kakao-out.js?v=11221820"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-<script src="../assets/config.js?v=11221815"></script>
-<script src="../assets/plaza-db.js?v=11221815"></script>
+<script src="../assets/config.js?v=11221820"></script>
+<script src="../assets/plaza-db.js?v=11221820"></script>
 <meta name="robots" content="noindex,nofollow">
 <div class="wrap">
 <header class="top">
@@ -307,7 +307,7 @@ function render(force){
   if(!force&&ae&&$('app').contains(ae)&&/INPUT|TEXTAREA|SELECT/.test(ae.tagName)&&ae.type!=='checkbox'){dirty=true;return;}
   dirty=false;
   const list=Object.entries(S.props).map(([id,p])=>Object.assign({id},p));
-  const by=st=>list.filter(p=>st.includes(p.stage)).sort((a,b)=>(a.saleDate||'9')<(b.saleDate||'9')?-1:1);
+  const by=st=>list.filter(p=>st.includes(p.stage)).sort((a,b)=>(goN(b)-goN(a))||((a.saleDate||'9')<(b.saleDate||'9')?-1:1));
   const hot=st=>by(st).filter(p=>pending(p).length).length;
   $('nav').innerHTML=TABS.map(([k,l])=>{ let c='';
     if(k==='rec') c='<span class="cnt">'+(hasPrefs()?recBase().filter(isMine).length:recList().length)+'</span>';
@@ -329,11 +329,12 @@ function reqs(){ return Object.entries(S.props).map(([id,p])=>Object.assign({id}
 function reqBox(){ const l=reqs(); if(!l.length) return '';
   return '<div class="reqbox"><b>검토 요청 '+l.length+'건</b><p class="sub">다른 멤버가 광장에 올린 물건입니다. 열어서 의견을 남겨 주세요.</p>'+l.slice(0,5).map(p=>'<button class="rq" data-open="'+p.id+'"><span><b>'+esc(nm(p.createdBy))+'</b>님이 올림 · '+esc(p.addr||p.caseNo||'')+'</span><span class="go">검토하기</span></button>').join('')+(l.length>5?'<p class="sub">외 '+(l.length-5)+'건은 광장 탭에서 볼 수 있습니다.</p>':'')+'</div>'; }
 function who(p){ const c=Object.keys(p.commented||{}).length; return p.stage==='review'?' · '+(p.createdBy?esc(nm(p.createdBy))+' 올림 · ':'')+'의견 '+c+'/'+S.members.length+'명':''; }
+const goN=p=>p.stage==='review'?Object.values(p.approvals||{}).filter(v=>v==='yes').length:0;
 function cwrap(p,c){ return canDel(p)?'<div class="cwrap">'+c+'<button class="btn danger cdel" data-propdel="'+p.id+'">삭제</button></div>':c; }
 function card(p){ return cwrap(p,card0(p)); }
 function card0(p){
   const pd=pending(p);
-  return '<button class="card" data-open="'+p.id+'"><div class="row between"><span class="row"><span class="pill acc">'+esc(p.type||dealOf(p))+'</span>'+zonePill(p)+(dealOf(p)!=='경매'?'<span class="pill">'+dealOf(p)+'</span>':p.track?'<span class="pill">'+(p.track==='npl'?'NPL 검토':'일반입찰')+'</span>':'')+'</span>'+
+  return '<button class="card" data-open="'+p.id+'"><div class="row between"><span class="row"><span class="pill acc">'+esc(p.type||dealOf(p))+'</span>'+zonePill(p)+(dealOf(p)!=='경매'?'<span class="pill">'+dealOf(p)+'</span>':p.track?'<span class="pill">'+(p.track==='npl'?'NPL 검토':'일반입찰')+'</span>':'')+(goN(p)?'<span class="pill good">임장 가자 '+goN(p)+'</span>':'')+'</span>'+
    (p.stage==='review'&&p.createdBy&&p.createdBy!==S.me&&!(p.commented||{})[S.me]?'<span class="pill crit">내 검토 필요</span>':pd.length?'<span class="pill crit">확인 필요 '+pd.length+'</span>':'<span class="pill good">확인 완료</span>')+'</div>'+
    '<div><div class="ttl">'+esc(p.addr||'주소 미입력')+'</div><div class="meta">'+esc(p.caseNo||'')+(isAuc(p)?' · 매각 '+esc(p.saleDate||'미정')+' · 유찰 '+(p.fails||0)+'회':'')+' '+(isAuc(p)?dday(p):'')+who(p)+'</div></div>'+metrics(p,false)+'</button>';
 }
