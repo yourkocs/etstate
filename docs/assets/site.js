@@ -3,7 +3,7 @@
   const $ = s => document.querySelector(s);
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
   const root = () => document.body.dataset.root || './';
-  const S = { acc: null, allow: null };
+  const S = { acc: null, allow: null, pend: null };
 
   function bar(){
     const a = S.acc;
@@ -15,7 +15,7 @@
   /* ---------- 로그인 ---------- */
   let mode = 'in';
   function loginView(msg, bad){
-    const T = { in: ['로그인', '멤버로 등록된 이메일과 비밀번호로 들어옵니다.'], up: ['처음 가입', '관리자가 등록해 준 이메일로 비밀번호를 정합니다. 등록 전이라면 가입은 되지만 내용은 보이지 않습니다.'], reset: ['비밀번호 다시 정하기', '가입한 이메일로 비밀번호를 다시 정하는 링크를 보냅니다.'], newpw: ['새 비밀번호', '앞으로 쓸 비밀번호를 입력해 주세요.'] }[mode];
+    const T = { in: ['로그인', '멤버로 등록된 이메일과 비밀번호로 들어옵니다.'], up: ['처음 가입', '이메일과 비밀번호를 정해 가입하면 관리자에게 가입 신청이 전달됩니다. 관리자가 승인한 뒤부터 내용이 보입니다.'], reset: ['비밀번호 다시 정하기', '가입한 이메일로 비밀번호를 다시 정하는 링크를 보냅니다.'], newpw: ['새 비밀번호', '앞으로 쓸 비밀번호를 입력해 주세요.'] }[mode];
     page('<h1>' + T[0] + '</h1><p class="lead">' + T[1] + '</p>' +
       '<form class="form" data-form="auth">' +
       (mode !== 'newpw' ? '<label>이메일<input id="a-email" type="email" autocomplete="email" required></label>' : '') +
@@ -42,12 +42,16 @@
   }
 
   /* ---------- 멤버 관리 (관리자만) ---------- */
-  async function loadAllow(){ try { S.allow = await PlazaDB.allowList(); } catch (_) { S.allow = []; } const put = n => { const el = $('#members'); if (el) el.outerHTML = membersBox(); else if (n) setTimeout(() => put(n - 1), 150); }; put(20); }
+  async function loadAllow(){ try { S.allow = await PlazaDB.allowList(); } catch (_) { S.allow = []; } try { S.pend = await PlazaDB.pendingList(); } catch (_) { S.pend = null; } const put = n => { const el = $('#members'); if (el) el.outerHTML = membersBox(); else if (n) setTimeout(() => put(n - 1), 150); }; put(20); }
   function membersBox(){
     if (!S.acc || !S.acc.admin) return '';
     if (!S.allow) { S.allow = Object.assign([], { perms: true }); loadAllow(); }
     const P = S.allow.perms, tick = (a, k, label) => '<label class="perm"><input type="checkbox" data-perm="' + k + '" data-email="' + esc(a.email) + '"' + (a.admin || a[k] !== false ? ' checked' : '') + (a.admin ? ' disabled' : '') + '>' + label + '</label>';
-    return '<section id="members"><h2>멤버 관리 · ' + S.allow.length + '명</h2><p class="lead" style="font-size:14px">여기 등록한 이메일만 내용을 볼 수 있습니다. 멤버마다 스터디 통합본과 부동산광장을 볼 수 있는지 따로 정합니다. 이메일을 추가한 뒤 사이트 주소를 보내 주고, "처음이면 가입하기"로 비밀번호를 정하라고 알려 주세요.</p>' +
+    const day = t => t ? new Date(t).toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' }) + ' 신청' : '';
+    const pend = S.pend === null ? '<div class="box" style="margin-top:12px">가입 신청 목록은 Supabase에서 설정 SQL을 한 번 더 실행한 뒤부터 보입니다.</div>'
+      : '<h2 style="margin-top:28px">가입 신청 · ' + S.pend.length + '명</h2>' + (S.pend.length ? '<p class="lead" style="font-size:14px">볼 수 있게 할 메뉴를 고르고 승인을 누르세요. 승인 전에는 아무 내용도 보이지 않습니다.</p><ul class="members" style="margin-top:12px">' + S.pend.map((p, i) => '<li><span>' + esc(p.email) + '<small>' + day(p.created_at) + '</small></span><span class="perms"><label class="perm"><input type="checkbox" id="pd-s' + i + '" checked>스터디</label><label class="perm"><input type="checkbox" id="pd-p' + i + '" checked>광장</label></span><button class="btn ghost" data-approve="' + i + '">승인</button></li>').join('') + '</ul>'
+        : '<p class="lead" style="font-size:14px">새로 가입 신청한 사람이 없습니다.</p>');
+    return '<section id="members">' + pend + '<h2 style="margin-top:28px">멤버 관리 · ' + S.allow.length + '명</h2><p class="lead" style="font-size:14px">승인한 멤버입니다. 멤버마다 스터디 통합본과 부동산광장을 볼 수 있는지 따로 정합니다. 가입 전인 사람의 이메일을 아래에 미리 넣어 두면 가입하자마자 볼 수 있습니다.</p>' +
       (P ? '' : '<div class="box" style="margin-top:12px">멤버별 권한 설정은 Supabase에서 설정 SQL을 한 번 더 실행한 뒤부터 쓸 수 있습니다. 그 전에는 등록된 멤버 모두가 둘 다 볼 수 있습니다.</div>') +
       '<ul class="members" style="margin-top:12px">' + S.allow.map(a => '<li><span>' + esc(a.email) + (a.admin ? '<small>관리자</small>' : '') + '</span>' +
         (P ? '<span class="perms">' + tick(a, 'study', '스터디') + tick(a, 'plaza', '광장') + '</span>' : '') +
@@ -63,6 +67,10 @@
     const a = e.target.closest('[data-act]'), d = e.target.closest('[data-del]');
     if (a && a.dataset.act === 'out') { await PlazaDB.signOut(); S.acc = null; mode = 'in'; return loginView(); }
     if (a && a.dataset.act === 'add') { const i = $('#m-add'), v = i && i.value.trim(); if (!v) return; try { const sc = $('#m-study'), pc = $('#m-plaza'); await PlazaDB.allowAdd(v, sc ? { study: sc.checked, plaza: pc.checked } : null); loadAllow(); } catch (err) { $('#m-msg').textContent = '추가하지 못했습니다. ' + ((err && err.message) || ''); } }
+    const ap = e.target.closest('[data-approve]');
+    if (ap) { const i = ap.dataset.approve, p = (S.pend || [])[i]; if (!p) return; ap.disabled = true;
+      try { await PlazaDB.allowAdd(p.email, S.allow.perms ? { study: $('#pd-s' + i).checked, plaza: $('#pd-p' + i).checked } : null); } catch (err) { const m = $('#m-msg'); if (m) m.textContent = '승인하지 못했습니다. ' + ((err && err.message) || ''); }
+      return loadAllow(); }
     if (d) { if (d.dataset.sure !== '1') { d.dataset.sure = '1'; d.textContent = '한 번 더 누르면 삭제'; return; } try { await PlazaDB.allowRemove(d.dataset.del); loadAllow(); } catch (_) {} }
   });
 
@@ -83,7 +91,7 @@
     let ses = null; try { ses = await PlazaDB.session(); } catch (_) {}
     if (!ses) return loginView();
     try { S.acc = await PlazaDB.access(); } catch (e) { return page('<div class="box bad">연결하지 못했습니다. 잠시 뒤 다시 열어 주세요. ' + esc((e && e.message) || '') + '</div>'); }
-    if (!S.acc.member) return page('<h1>등록 대기 중</h1><p class="lead">' + esc(S.acc.email) + ' 계정은 아직 멤버로 등록되지 않았습니다. 관리자에게 이 이메일을 등록해 달라고 한 뒤 다시 열어 주세요.</p>');
+    if (!S.acc.member) return page('<h1>승인 대기 중</h1><p class="lead">' + esc(S.acc.email) + ' 계정으로 가입 신청이 접수되었습니다. 관리자가 승인하면 내용이 보입니다. 승인 뒤 이 화면을 다시 열어 주세요.</p>');
     page(await draw(S.acc, PlazaDB.db));
   }
   window.Site = { denied, start(fn){ draw = fn; if (window.PlazaDB) PlazaDB.onAuth(ev => { if (ev === 'PASSWORD_RECOVERY') { mode = 'newpw'; loginView(); } }); boot(); }, esc, page, membersBox, acc: () => S.acc };

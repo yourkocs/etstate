@@ -79,6 +79,17 @@ create policy allow_admin_del on public.allowed_emails for delete to authenticat
 drop policy if exists allow_admin_upd on public.allowed_emails;
 create policy allow_admin_upd on public.allowed_emails for update to authenticated using (public.is_admin()) with check (public.is_admin());
 
+-- 4-1. 가입 신청 목록: 가입은 했지만 아직 승인(허용 목록 등록)되지 않은 이메일. 관리자만 볼 수 있음
+create or replace function public.pending_signups() returns table (email text, created_at timestamptz)
+language sql stable security definer set search_path = public as $$
+  select lower(u.email), u.created_at from auth.users u
+  where public.is_admin() and u.email is not null
+    and not exists (select 1 from public.allowed_emails a where a.email = lower(u.email))
+  order by u.created_at
+$$;
+revoke all on function public.pending_signups() from public;
+grant execute on function public.pending_signups() to authenticated;
+
 -- 5. 깊은 병합 업데이트 (체크 하나만 바꿔도 다른 체크가 지워지지 않게)
 create or replace function public.jsonb_deep_merge(a jsonb, b jsonb) returns jsonb
 language sql immutable as $$

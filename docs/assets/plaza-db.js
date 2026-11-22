@@ -63,9 +63,11 @@
     return Object.assign(chk(await sb.from('allowed_emails').select('email,admin').order('email')), { perms: false });
   }
   async function allowAdd(email, perm){ chk(await sb.from('allowed_emails').insert(Object.assign({ email: email.trim().toLowerCase() }, perm || {}))); }
+  /* 가입 신청 목록 (관리자만). 설정 SQL 실행 전이면 null */
+  async function pendingList(){ const r = await sb.rpc('pending_signups'); return r.error ? null : r.data; }
   async function allowSet(email, patch){ chk(await sb.from('allowed_emails').update(patch).eq('email', email)); }
   async function allowRemove(email){ chk(await sb.from('allowed_emails').delete().eq('email', email)); }
 
-  window.PlazaDB = { sb, db: { doc, collection }, session, signIn, signUp, resetPassword, setPassword, signOut, access, allowList, allowAdd, allowSet, allowRemove,
+  window.PlazaDB = { sb, db: { doc, collection }, session, signIn, signUp, resetPassword, setPassword, signOut, access, allowList, allowAdd, allowSet, allowRemove, pendingList,
     onAuth: cb => sb.auth.onAuthStateChange((ev, s) => cb(ev, s)) };
 })();
