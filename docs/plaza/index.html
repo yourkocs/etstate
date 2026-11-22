@@ -159,10 +159,10 @@ nav button.spot{color:var(--accent);animation:pulse 1.2s ease-in-out infinite;bo
 @keyframes pulse{0%,100%{background:transparent}50%{background:var(--accent-soft)}}
 @media (prefers-reduced-motion:reduce){.guide .box,nav button.spot{animation:none}nav button.spot{background:var(--accent-soft)}}
 </style>
-<script src="../assets/kakao-out.js?v=11221330"></script>
+<script src="../assets/kakao-out.js?v=11221750"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-<script src="../assets/config.js?v=11221330"></script>
-<script src="../assets/plaza-db.js?v=11221330"></script>
+<script src="../assets/config.js?v=11221750"></script>
+<script src="../assets/plaza-db.js?v=11221750"></script>
 <meta name="robots" content="noindex,nofollow">
 <div class="wrap">
 <header class="top">
@@ -239,8 +239,8 @@ function merge(a,b){for(const k in b){if(b[k]&&typeof b[k]==='object'&&!Array.is
 /* ---------- 저장 ---------- */
 function fail(e){S.err='저장하지 못했습니다. '+((e&&e.message)||'잠시 뒤 다시 시도해 주세요.');render(true);}
 function upd(id,patch){ if(db){db.doc('props/'+id).update(patch).catch(fail);} else {merge(S.props[id],patch);render(true);} }
-function createProp(d){ const id='p'+Date.now().toString(36); d.stage='review'; d.createdBy=S.me||''; d.createdAt=Date.now();
-  if(db){db.doc('props/'+id).set(d).catch(fail);} else {S.props[id]=d;} S.adding=false; S.tab='review'; render(true); }
+function createProp(d,stay){ const id='p'+Date.now().toString(36); d.stage='review'; d.createdBy=S.me||''; d.createdAt=Date.now();
+  if(db){db.doc('props/'+id).set(d).catch(fail);} else {S.props[id]=d;} S.adding=false; if(stay) S.ok='광장으로 옮겼습니다: '+(d.caseNo||d.addr||''); else S.tab='review'; render(true); }
 function addComment(pid,d){ if(db){db.collection('props/'+pid+'/comments').add(d).catch(fail);} else {S.comments.push(Object.assign({id:'c'+Date.now()},d));render(true);} }
 function savePrefs(d){ S.prefs=d; if(db&&S.me){db.doc('data/users/'+S.me+'/prefs').set(d).catch(fail); db.doc('members/'+S.me).update({regions:d.regions||'',types:d.types||[],prefsAt:Date.now()}).catch(()=>{});} render(true); }
 
@@ -313,7 +313,7 @@ function render(force){
     if(k==='review'||k==='visit'||k==='bid'){ const n=by([k]).length,h=hot([k]); c='<span class="cnt'+(h?' hot':'')+'">'+(h||n)+'</span>'; }
     return '<button data-tab="'+k+'"'+(gstep>=0&&GUIDE[gstep][0]===k?' class="spot"':'')+' aria-current="'+(S.tab===k)+'">'+l+c+'</button>'; }).join('');
   $('who').innerHTML=S.live?('<i>'+esc((nm(S.me)||'나').slice(0,1))+'</i><span>'+esc(nm(S.me))+' <small>멤버 '+S.members.length+'명</small></span>'):(S.ready?'<small>미리보기 (저장 안 됨)</small>':'');
-  let h=S.err?'<div class="alert">'+esc(S.err)+'</div>':''; S.err='';
+  let h=S.err?'<div class="alert">'+esc(S.err)+'</div>':''; S.err=''; if(S.ok){ h+='<div class="alert ok" role="status">'+esc(S.ok)+'</div>'; S.ok=''; }
   if(S.ready&&!S.live) h+='<div class="note">로그인한 멤버로 열어야 내용이 저장되고 서로 보입니다. 지금 입력하는 내용은 이 화면에만 남습니다.</div>';
   h+=nameBox();
   if(S.open&&S.props[S.open]) h+=detail(Object.assign({id:S.open},S.props[S.open]));
@@ -514,7 +514,7 @@ function prefSummary(){ const f=S.prefs||{}, o=[]; const g=regsOf(f); if(g.lengt
 function recCard(r){ const mine=isMine(r), sk=(r.skip||{})[S.me];
   return '<div class="card'+(mine?' mine':'')+'"><div class="row between"><span class="row">'+(mine?'<span class="pill acc">내 조건</span>':'')+'<span class="pill">'+esc(subOf(r))+'</span>'+zonePill(r)+(r.example?'<span class="pill warn">예시 데이터</span>':'')+'</span>'+dday(r)+'</div>'+
    '<div><div class="ttl">'+esc(r.addr)+'</div><div class="meta">'+esc(r.caseNo)+' · 매각 '+esc(r.saleDate||'미정')+' · 유찰 '+(r.fails||0)+'회'+(r.amc?' · 유동화회사':'')+'</div></div>'+metrics(r,true)+(r.note?'<p class="sub">'+esc(r.note)+'</p>':'')+
-   '<div class="row"><button class="btn pri" data-rec="'+r.id+'">광장으로 이동</button><button class="btn'+(sk?' on':'')+'" data-skip="'+r.id+'">'+(sk?'관심없음 취소':'관심없음')+'</button>'+(skipN(r)?'<span class="sub">관심없음 '+skipN(r)+' / '+S.members.length+'명</span>':'')+(r.src?'<span class="sub" style="margin-left:auto">'+esc(r.src)+'</span>':'')+'</div></div>'; }
+   '<div class="row"><button class="btn pri" data-rec="'+r.id+'">광장으로 이동</button><button class="btn'+(sk?' on':'')+'" data-skip="'+r.id+'">'+(sk?'관심없음 취소':'관심없음')+'</button><button class="btn danger" data-recdel="'+r.id+'">삭제</button>'+(skipN(r)?'<span class="sub">관심없음 '+skipN(r)+' / '+S.members.length+'명</span>':'')+(r.src?'<span class="sub" style="margin-left:auto">'+esc(r.src)+'</span>':'')+'</div></div>'; }
 function recView(){ const all=recBase(), l=recList(), hp=hasPrefs(), mine=l.filter(isMine), rest=l.filter(r=>!isMine(r)), sum=prefSummary();
   let h='<div class="mybox"><div class="row between"><h2>'+esc(S.live?nm(S.me)+'님의 추천':'오늘 추천')+'</h2><button class="btn" data-tab="prefs">'+(hp?'내 조건 바꾸기':'내 조건 설정')+'</button></div>'+
    (hp?'<div class="row">'+sum.map(x=>'<span class="pill acc">'+esc(x)+'</span>').join('')+'</div><p class="sub">내 조건에 맞는 물건이 맨 위에 나옵니다. 조건은 계정마다 따로 저장됩니다.</p>':'<p class="sub">아직 내 조건이 없어 수집된 물건을 최근 순서로 보여 줍니다. 관심 지역과 용도를 정하면 맞는 물건이 맨 위에 올라옵니다.</p>')+'</div>'+useBar(all)+skipBar();
@@ -551,6 +551,7 @@ document.addEventListener('click',e=>{
   const phb=e.target.closest('[data-ph]'); if(phb){ S.viewPhoto=phb.dataset.ph||null; return render(true); }
   const rg=e.target.closest('[data-reg]'); if(rg){ const i=$('p-regions'), k=rg.dataset.reg; let a=i.value.split(/[,\s]+/).filter(Boolean); a=a.includes(k)?a.filter(x=>x!==k):a.concat([k]); i.value=a.join(', '); rg.setAttribute('aria-pressed',a.includes(k)); return; }
   const gb=e.target.closest('[data-guide]'); if(gb){ const a=gb.dataset.guide; if(a==='skip') guideEnd(); else if(a==='open') guideGo(0); else guideGo(gstep+(a==='next'?1:-1)); return; }
+  const rd=e.target.closest('[data-recdel]'); if(rd){ const k=rd.dataset.recdel; if(rd.dataset.sure!=='1'){ rd.dataset.sure='1'; rd.textContent='한 번 더 누르면 완전히 삭제'; return; } if(db){ db.doc('recs/'+k).delete().catch(fail); } S.recs=S.recs.filter(x=>x.id!==k); S.ok='추천 목록에서 삭제했습니다.'; return render(true); }
   const ub=e.target.closest('[data-use]'); const kb=e.target.closest('[data-skip]'); if(kb){ const r=S.recs.find(x=>x.id===kb.dataset.skip); if(r){ const v=!(r.skip||{})[S.me]; if(db){ db.doc('recs/'+r.id).update({skip:{[S.me]:v}}).catch(fail); } else { r.skip=Object.assign({},r.skip,{[S.me]:v}); render(true); } } return; }
   const sb=e.target.closest('[data-sub]'); if(sb){ S.sub=sb.dataset.sub; return render(true); }
   if(ub){ S.use=ub.dataset.use; S.sub='all'; try{localStorage.setItem('use-tab',S.use);}catch(_){ } return render(true); }
@@ -558,7 +559,7 @@ document.addEventListener('click',e=>{
   const id=S.open,p=id&&S.props[id]; const d=t.dataset;
   if(d.tab){ S.tab=d.tab; S.adding=false; openProp(null); try{history.replaceState(null,'','#'+d.tab);}catch(_){} return; }
   if(d.open) return openProp(d.open);
-  if(d.rec){ const r=S.recs.find(x=>x.id===d.rec); if(r){ const c=Object.assign({},r); delete c.id; delete c.example; delete c.src; c.source='추천'; c.deal='경매'; createProp(c);} return; }
+  if(d.rec){ const r=S.recs.find(x=>x.id===d.rec); if(r){ const c=Object.assign({},r); delete c.id; delete c.example; delete c.src; c.source='추천'; c.deal='경매'; createProp(c,true);} return; }
   if(d.track) return upd(id,{track:d.track});
   if(d.vote) return upd(id,{approvals:{[S.me||'me']:d.vote}});
   if(d.join) return upd(id,{bid:{join:d.join}});
