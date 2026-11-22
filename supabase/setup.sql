@@ -79,16 +79,7 @@ create policy allow_admin_del on public.allowed_emails for delete to authenticat
 drop policy if exists allow_admin_upd on public.allowed_emails;
 create policy allow_admin_upd on public.allowed_emails for update to authenticated using (public.is_admin()) with check (public.is_admin());
 
--- 4-1. 가입 신청 목록: 가입은 했지만 아직 승인(허용 목록 등록)되지 않은 이메일. 관리자만 볼 수 있음
-create or replace function public.pending_signups() returns table (email text, created_at timestamptz)
-language sql stable security definer set search_path = public as $$
-  select lower(u.email), u.created_at from auth.users u
-  where public.is_admin() and u.email is not null
-    and not exists (select 1 from public.allowed_emails a where a.email = lower(u.email))
-  order by u.created_at
-$$;
-revoke all on function public.pending_signups() from public;
-grant execute on function public.pending_signups() to authenticated;
+-- 4-1. 가입 신청 목록(pending_signups)은 아래 9번에서 만듭니다.
 
 -- 5. 깊은 병합 업데이트 (체크 하나만 바꿔도 다른 체크가 지워지지 않게)
 create or replace function public.jsonb_deep_merge(a jsonb, b jsonb) returns jsonb
@@ -146,3 +137,88 @@ grant select, insert, delete on public.allowed_emails to authenticated;
 grant update (study, plaza) on public.allowed_emails to authenticated;
 grant execute on function public.doc_merge(text, jsonb) to authenticated;
 grant execute on function public.plaza_access() to authenticated;
+
+-- 9. 한 달(30일) 동안 접속이 없는 멤버는 권한 만료, 다시 요청하면 관리자가 승인 (관리자는 만료되지 않음)
+alter table public.allowed_emails add column if not exists last_seen timestamptz not null default now();
+
+create table if not exists public.expired_members (
+  email text primary key,
+  expired_at timestamptz not null default now(),
+  requested_at timestamptz
+);
+alter table public.expired_members enable row level security;
+
+create or replace function public.is_member() returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.allowed_emails where email = public.my_email()
+    and (admin or last_seen > now() - interval '30 days'))
+$$;
+create or replace function public.can_study() returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.allowed_emails where email = public.my_email()
+    and (admin or (study and last_seen > now() - interval '30 days')))
+$$;
+create or replace function public.can_plaza() returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.allowed_emails where email = public.my_email()
+    and (admin or (plaza and last_seen > now() - interval '30 days')))
+$$;
+
+create or replace function public.purge_inactive() returns integer
+language plpgsql security definer set search_path = public as $$
+declare n integer;
+begin
+  with gone as (
+    delete from public.allowed_emails
+    where not admin and last_seen <= now() - interval '30 days' returning email)
+  insert into public.expired_members (email) select email from gone
+  on conflict (email) do update set expired_at = now(), requested_at = null;
+  get diagnostics n = row_count;
+  return n;
+end $$;
+revoke all on function public.purge_inactive() from public;
+
+create or replace function public.plaza_access() returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare e text := public.my_email();
+begin
+  if auth.uid() is null or e = '' then
+    return jsonb_build_object('member', false, 'admin', false);
+  end if;
+  if not exists (select 1 from public.allowed_emails) then
+    insert into public.allowed_emails (email, admin) values (e, true);
+  end if;
+  perform public.purge_inactive();
+  update public.allowed_emails set last_seen = now() where email = e;
+  return jsonb_build_object('member', public.is_member(), 'admin', public.is_admin(), 'email', e, 'uid', auth.uid(),
+    'study', public.can_study(), 'plaza', public.can_plaza(),
+    'expired', exists (select 1 from public.expired_members where email = e),
+    'requested', exists (select 1 from public.expired_members where email = e and requested_at is not null));
+end $$;
+
+create or replace function public.request_access() returns void
+language sql security definer set search_path = public as $$
+  update public.expired_members set requested_at = now() where email = public.my_email()
+$$;
+revoke all on function public.request_access() from public;
+grant execute on function public.request_access() to authenticated;
+
+drop function if exists public.pending_signups();
+create function public.pending_signups() returns table (email text, created_at timestamptz, kind text)
+language sql stable security definer set search_path = public as $$
+  select lower(u.email), coalesce(x.requested_at, u.created_at), case when x.email is null then 'new' else 'again' end
+  from auth.users u left join public.expired_members x on x.email = lower(u.email)
+  where public.is_admin() and u.email is not null
+    and not exists (select 1 from public.allowed_emails a where a.email = lower(u.email))
+    and (x.email is null or x.requested_at is not null)
+  order by 2
+$$;
+revoke all on function public.pending_signups() from public;
+grant execute on function public.pending_signups() to authenticated;
+
+create or replace function public.clear_expired() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin delete from public.expired_members where email = new.email; return new; end $$;
+drop trigger if exists allowed_clear_expired on public.allowed_emails;
+create trigger allowed_clear_expired after insert on public.allowed_emails
+  for each row execute function public.clear_expired();

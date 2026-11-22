@@ -85,3 +85,7 @@ p{margin:0}
 .perm input{width:18px;height:18px;accent-color:var(--ink)}
 .addrow{flex-wrap:wrap;align-items:center}
 .addrow input[type=email]{flex:1 1 200px}
+.members small.seen{display:block;margin-left:0;margin-top:2px;font-size:12.5px}
+.members small.seen.soon{color:var(--bad)}
+.adminlink{margin-top:28px;font-size:15px}
+.adminlink a{color:var(--ink);text-underline-offset:4px}

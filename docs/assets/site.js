@@ -47,13 +47,15 @@
     if (!S.acc || !S.acc.admin) return '';
     if (!S.allow) { S.allow = Object.assign([], { perms: true }); loadAllow(); }
     const P = S.allow.perms, tick = (a, k, label) => '<label class="perm"><input type="checkbox" data-perm="' + k + '" data-email="' + esc(a.email) + '"' + (a.admin || a[k] !== false ? ' checked' : '') + (a.admin ? ' disabled' : '') + '>' + label + '</label>';
+    const seen = a => { if (!S.allow.seen || !a.last_seen) return ''; const d = Math.floor((Date.now() - Date.parse(a.last_seen)) / 864e5), left = 30 - d;
+      return '<small class="seen' + (!a.admin && left <= 7 ? ' soon' : '') + '">마지막 접속 ' + (d <= 0 ? '오늘' : d + '일 전') + (a.admin ? '' : ' · ' + (left > 0 ? left + '일 뒤 만료' : '곧 만료')) + '</small>'; };
     const day = t => t ? new Date(t).toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' }) + ' 신청' : '';
     const pend = S.pend === null ? '<div class="box" style="margin-top:12px">가입 신청 목록은 Supabase에서 설정 SQL을 한 번 더 실행한 뒤부터 보입니다.</div>'
-      : '<h2 style="margin-top:28px">가입 신청 · ' + S.pend.length + '명</h2>' + (S.pend.length ? '<p class="lead" style="font-size:14px">볼 수 있게 할 메뉴를 고르고 승인을 누르세요. 승인 전에는 아무 내용도 보이지 않습니다.</p><ul class="members" style="margin-top:12px">' + S.pend.map((p, i) => '<li><span>' + esc(p.email) + '<small>' + day(p.created_at) + '</small></span><span class="perms"><label class="perm"><input type="checkbox" id="pd-s' + i + '" checked>스터디</label><label class="perm"><input type="checkbox" id="pd-p' + i + '" checked>광장</label></span><button class="btn ghost" data-approve="' + i + '">승인</button></li>').join('') + '</ul>'
+      : '<h2 style="margin-top:28px">가입 신청 · ' + S.pend.length + '명</h2>' + (S.pend.length ? '<p class="lead" style="font-size:14px">볼 수 있게 할 메뉴를 고르고 승인을 누르세요. 승인 전에는 아무 내용도 보이지 않습니다.</p><ul class="members" style="margin-top:12px">' + S.pend.map((p, i) => '<li><span>' + esc(p.email) + '<small>' + day(p.created_at) + (p.kind === 'again' ? ' · 만료 후 재요청' : '') + '</small></span><span class="perms"><label class="perm"><input type="checkbox" id="pd-s' + i + '" checked>스터디</label><label class="perm"><input type="checkbox" id="pd-p' + i + '" checked>광장</label></span><button class="btn ghost" data-approve="' + i + '">승인</button></li>').join('') + '</ul>'
         : '<p class="lead" style="font-size:14px">새로 가입 신청한 사람이 없습니다.</p>');
-    return '<section id="members">' + pend + '<h2 style="margin-top:28px">멤버 관리 · ' + S.allow.length + '명</h2><p class="lead" style="font-size:14px">승인한 멤버입니다. 멤버마다 스터디 통합본과 부동산광장을 볼 수 있는지 따로 정합니다. 가입 전인 사람의 이메일을 아래에 미리 넣어 두면 가입하자마자 볼 수 있습니다.</p>' +
+    return '<section id="members">' + pend + '<h2 style="margin-top:28px">멤버 관리 · ' + S.allow.length + '명</h2><p class="lead" style="font-size:14px">승인한 멤버입니다. 멤버마다 스터디 통합본과 부동산광장을 볼 수 있는지 따로 정합니다. 30일 동안 접속하지 않은 멤버는 권한이 자동으로 지워지고, 그 멤버가 다시 요청하면 위 가입 신청에 나타납니다. 관리자는 만료되지 않습니다. 가입 전인 사람의 이메일을 아래에 미리 넣어 두면 가입하자마자 볼 수 있습니다.</p>' +
       (P ? '' : '<div class="box" style="margin-top:12px">멤버별 권한 설정은 Supabase에서 설정 SQL을 한 번 더 실행한 뒤부터 쓸 수 있습니다. 그 전에는 등록된 멤버 모두가 둘 다 볼 수 있습니다.</div>') +
-      '<ul class="members" style="margin-top:12px">' + S.allow.map(a => '<li><span>' + esc(a.email) + (a.admin ? '<small>관리자</small>' : '') + '</span>' +
+      '<ul class="members" style="margin-top:12px">' + S.allow.map(a => '<li><span>' + esc(a.email) + (a.admin ? '<small>관리자</small>' : '') + seen(a) + '</span>' +
         (P ? '<span class="perms">' + tick(a, 'study', '스터디') + tick(a, 'plaza', '광장') + '</span>' : '') +
         (a.email === S.acc.email ? '' : '<button class="link" data-del="' + esc(a.email) + '">삭제</button>') + '</li>').join('') + '</ul>' +
       '<div class="addrow"><input id="m-add" type="email" placeholder="추가할 이메일" autocomplete="off">' +
@@ -66,6 +68,7 @@
     const md = e.target.closest('[data-mode]'); if (md) { mode = md.dataset.mode; return loginView(); }
     const a = e.target.closest('[data-act]'), d = e.target.closest('[data-del]');
     if (a && a.dataset.act === 'out') { await PlazaDB.signOut(); S.acc = null; mode = 'in'; return loginView(); }
+    if (a && a.dataset.act === 'reask') { a.disabled = true; try { await PlazaDB.requestAccess(); return boot(); } catch (err) { a.disabled = false; const m = $('#r-msg'); if (m) m.textContent = '요청하지 못했습니다. ' + ((err && err.message) || ''); } return; }
     if (a && a.dataset.act === 'add') { const i = $('#m-add'), v = i && i.value.trim(); if (!v) return; try { const sc = $('#m-study'), pc = $('#m-plaza'); await PlazaDB.allowAdd(v, sc ? { study: sc.checked, plaza: pc.checked } : null); loadAllow(); } catch (err) { $('#m-msg').textContent = '추가하지 못했습니다. ' + ((err && err.message) || ''); } }
     const ap = e.target.closest('[data-approve]');
     if (ap) { const i = ap.dataset.approve, p = (S.pend || [])[i]; if (!p) return; ap.disabled = true;
@@ -91,6 +94,7 @@
     let ses = null; try { ses = await PlazaDB.session(); } catch (_) {}
     if (!ses) return loginView();
     try { S.acc = await PlazaDB.access(); } catch (e) { return page('<div class="box bad">연결하지 못했습니다. 잠시 뒤 다시 열어 주세요. ' + esc((e && e.message) || '') + '</div>'); }
+    if (!S.acc.member && S.acc.expired) return page('<h1>권한이 만료되었습니다</h1><p class="lead">' + esc(S.acc.email) + ' 계정은 30일 동안 접속이 없어 열람 권한이 지워졌습니다. ' + (S.acc.requested ? '다시 요청해 두었습니다. 관리자가 승인하면 내용이 보입니다.' : '계속 이용하려면 관리자에게 다시 요청해 주세요.') + '</p>' + (S.acc.requested ? '' : '<p style="margin-top:20px"><button class="btn" data-act="reask">관리자에게 다시 요청하기</button></p><p class="msg" id="r-msg"></p>'));
     if (!S.acc.member) return page('<h1>승인 대기 중</h1><p class="lead">' + esc(S.acc.email) + ' 계정으로 가입 신청이 접수되었습니다. 관리자가 승인하면 내용이 보입니다. 승인 뒤 이 화면을 다시 열어 주세요.</p>');
     page(await draw(S.acc, PlazaDB.db));
   }

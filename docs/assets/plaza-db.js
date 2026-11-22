@@ -58,6 +58,8 @@
   async function access(){ const r = await sb.rpc('plaza_access'); if (r.error) throw r.error; return r.data; }
   /* study·plaza 열이 아직 없으면(설정 SQL 실행 전) 예전 방식으로 읽고 perms=false 로 알립니다. */
   async function allowList(){
+    const r2 = await sb.from('allowed_emails').select('email,admin,study,plaza,last_seen').order('email');
+    if (!r2.error) return Object.assign(r2.data, { perms: true, seen: true });
     const r = await sb.from('allowed_emails').select('email,admin,study,plaza').order('email');
     if (!r.error) return Object.assign(r.data, { perms: true });
     return Object.assign(chk(await sb.from('allowed_emails').select('email,admin').order('email')), { perms: false });
@@ -65,9 +67,10 @@
   async function allowAdd(email, perm){ chk(await sb.from('allowed_emails').insert(Object.assign({ email: email.trim().toLowerCase() }, perm || {}))); }
   /* 가입 신청 목록 (관리자만). 설정 SQL 실행 전이면 null */
   async function pendingList(){ const r = await sb.rpc('pending_signups'); return r.error ? null : r.data; }
+  async function requestAccess(){ chk(await sb.rpc('request_access')); }
   async function allowSet(email, patch){ chk(await sb.from('allowed_emails').update(patch).eq('email', email)); }
   async function allowRemove(email){ chk(await sb.from('allowed_emails').delete().eq('email', email)); }
 
-  window.PlazaDB = { sb, db: { doc, collection }, session, signIn, signUp, resetPassword, setPassword, signOut, access, allowList, allowAdd, allowSet, allowRemove, pendingList,
+  window.PlazaDB = { sb, db: { doc, collection }, session, signIn, signUp, resetPassword, setPassword, signOut, access, allowList, allowAdd, allowSet, allowRemove, pendingList, requestAccess,
     onAuth: cb => sb.auth.onAuthStateChange((ev, s) => cb(ev, s)) };
 })();
