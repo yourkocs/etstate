@@ -159,6 +159,32 @@ nav button.spot{color:var(--accent);animation:pulse 1.2s ease-in-out infinite;bo
 @keyframes gup{from{transform:translateY(16px);opacity:.3}to{transform:none;opacity:1}}
 @keyframes pulse{0%,100%{background:transparent}50%{background:var(--accent-soft)}}
 @media (prefers-reduced-motion:reduce){.guide .box,nav button.spot{animation:none}nav button.spot{background:var(--accent-soft)}}
+
+/* 압축 목록(폰에서 여러 물건을 한 번에 훑기) */
+.lrows{display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.lrow{display:block;width:100%;text-align:left;background:none;border:0;border-top:1px solid var(--line);padding:11px 14px;font:inherit;color:inherit;cursor:pointer}
+.lrows>.lrow:first-child,.lrows>.lwrap:first-child>.lrow{border-top:0}
+.lwrap.open>.lrow{background:var(--accent-soft)}
+.lrow .l1{display:flex;align-items:center;gap:6px;min-width:0}
+.lrow .l1 .ad{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+.lrow .l2{display:flex;flex-wrap:wrap;gap:2px 10px;margin-top:3px;font-size:13px;color:var(--mute);font-variant-numeric:tabular-nums}
+.lrow .l2 b{color:var(--fg);font-weight:600}
+.lrow:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.lwrap .lbody{padding:0 10px 12px;background:var(--accent-soft)}
+.lwrap .lbody>.card{box-shadow:none}
+.nb{font-size:11px;font-weight:700;color:var(--on-accent);background:var(--accent);border-radius:5px;padding:0 5px;line-height:18px;flex:none}
+.nb.chg{background:var(--warn-soft);color:var(--warn)}
+.tp{font-size:12px;color:var(--mute);flex:none}
+.batch{font-size:13px;color:var(--mute)}
+.reqline{display:flex;justify-content:space-between;align-items:center;gap:10px;width:100%;text-align:left;font:inherit;color:var(--fg);background:var(--crit-soft);border:1px solid var(--crit);border-radius:12px;padding:10px 14px;cursor:pointer;font-size:14px}
+.reqline b{color:var(--crit)}.reqline .go{color:var(--crit);font-weight:600;white-space:nowrap;font-size:13px}
+/* 긴급 */
+.card.urgent{border-color:var(--crit);box-shadow:inset 0 4px 0 var(--crit)}
+.ubar{background:var(--crit);color:#fff;border-radius:10px;padding:8px 12px;font-size:13.5px;display:flex;flex-direction:column;gap:2px}
+.ubar b{font-size:14px}
+.ubar small{opacity:.9}
+.ubox{border:1px dashed var(--crit);border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:8px}
+.ubox input{width:100%}
 </style>
 <script src="../assets/kakao-out.js?v=11221820"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
@@ -176,7 +202,7 @@ nav button.spot{color:var(--accent);animation:pulse 1.2s ease-in-out infinite;bo
 <div id="photo-fab" hidden><span>사진 추가</span><input id="photo-in" type="file" accept="image/*" multiple aria-label="현장 사진 추가"></div>
 <script>
 (function(){
-const TABS=[['rec','오늘 추천'],['review','광장'],['visit','임장'],['bid','입찰·계약'],['follow','추적'],['prefs','내 조건']];
+const TABS=[['rec','새 물건'],['review','광장'],['visit','임장'],['bid','입찰·계약'],['follow','추적'],['prefs','내 조건']];
 const DEALS=['경매','공매','급매','일반매매'];
 const dealOf=p=>p.deal||'경매', isAuc=p=>['경매','공매'].includes(dealOf(p));
 const TYPES=['숙박시설','근린상가','근린주택','근린시설','오피스텔','지식산업센터','공장','토지','아파트','빌라'];
@@ -307,10 +333,10 @@ function render(force){
   if(!force&&ae&&$('app').contains(ae)&&/INPUT|TEXTAREA|SELECT/.test(ae.tagName)&&ae.type!=='checkbox'){dirty=true;return;}
   dirty=false;
   const list=Object.entries(S.props).map(([id,p])=>Object.assign({id},p));
-  const by=st=>list.filter(p=>st.includes(p.stage)).sort((a,b)=>(goN(b)-goN(a))||((a.saleDate||'9')<(b.saleDate||'9')?-1:1));
+  const by=st=>list.filter(p=>st.includes(p.stage)).sort((a,b)=>((urgOn(b)?1:0)-(urgOn(a)?1:0))||(goN(b)-goN(a))||((a.saleDate||'9')<(b.saleDate||'9')?-1:1));
   const hot=st=>by(st).filter(p=>pending(p).length).length;
   $('nav').innerHTML=TABS.map(([k,l])=>{ let c='';
-    if(k==='rec') c='<span class="cnt">'+(hasPrefs()?recBase().filter(isMine).length:recList().length)+'</span>';
+    if(k==='rec'){ const bd=batchDay(); c='<span class="cnt">'+recBase().filter(r=>(!hasPrefs()||isMine(r))&&isNew(r,bd)).length+'</span>'; }
     if(k==='follow') c='<span class="cnt">'+by(['done','pass']).length+'</span>';
     if(k==='review'||k==='visit'||k==='bid'){ const n=by([k]).length,h=hot([k]); c='<span class="cnt'+(h?' hot':'')+'">'+(h||n)+'</span>'; }
     return '<button data-tab="'+k+'"'+(gstep>=0&&GUIDE[gstep][0]===k?' class="spot"':'')+' aria-current="'+(S.tab===k)+'">'+l+c+'</button>'; }).join('');
@@ -319,22 +345,35 @@ function render(force){
   if(S.ready&&!S.live) h+='<div class="note">로그인한 멤버로 열어야 내용이 저장되고 서로 보입니다. 지금 입력하는 내용은 이 화면에만 남습니다.</div>';
   h+=nameBox();
   if(S.open&&S.props[S.open]) h+=detail(Object.assign({id:S.open},S.props[S.open]));
-  else if(S.tab==='rec') h+=reqBox()+recView();
+  else if(S.tab==='rec') h+=reqLine()+recView();
   else if(S.tab==='prefs') h+=prefsView();
   else if(S.tab==='follow') h+=followView(by);
   else h+=(S.tab==='review'?'':reqBox())+listView(S.tab,by);
   $('app').innerHTML=h; foldify(); const fab=$('photo-fab'), op=S.open&&S.props[S.open]; if(fab) fab.hidden=!(op&&gstep<0&&!S.viewPhoto&&(op.stage==='visit'||((op.stage==='bid'||op.stage==='done'||op.stage==='pass')&&(op.visitDate||S.photos.length))));
 }
-function reqs(){ return Object.entries(S.props).map(([id,p])=>Object.assign({id},p)).filter(p=>p.stage==='review'&&p.createdBy&&p.createdBy!==S.me&&!(p.commented||{})[S.me]).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0)); }
+/* ---------- 긴급: 올린 사람이 한 명당 1건, 사유 한 줄, 멤버별 봤음 ---------- */
+const urgOn=p=>!!(p.urgent&&p.urgent.on)&&p.stage==='review'&&!(p.saleDate&&p.saleDate<today());
+function myUrgent(ex){ return Object.entries(S.props).map(([id,p])=>Object.assign({id},p)).find(p=>p.id!==ex&&urgOn(p)&&p.urgent.by===S.me); }
+function seenLine(p){ const s=p.seen||{}, ms=S.members.filter(m=>m!==p.urgent.by), y=ms.filter(m=>s[m]), n=ms.filter(m=>!s[m]);
+  return '봤음 '+y.length+'/'+ms.length+(n.length?' · 아직: '+n.map(m=>esc(nm(m))).join(', '):' · 모두 봤습니다'); }
+function ubar(p){ return urgOn(p)?'<div class="ubar"><b>긴급 · '+esc(nm(p.urgent.by))+' 님'+(p.saleDate?' · '+dday(p).replace(/<[^>]+>/g,''):'')+'</b><span>'+esc(p.urgent.reason||'')+'</span><small>'+seenLine(p)+'</small></div>':''; }
+function urgBox(p){ if(p.stage!=='review'||!(p.createdBy===S.me||S.admin)||(p.saleDate&&p.saleDate<today())) return '';
+  if(urgOn(p)) return '<div class="ubox"><div class="row between"><b>긴급으로 표시 중</b><button class="btn" data-act="urg-off">긴급 해제</button></div><p class="sub">광장 맨 위에 빨간 띠로 보입니다. 매각기일이 지나거나 임장·패스로 넘어가면 자동으로 풀립니다.</p></div>';
+  const other=myUrgent(p.id);
+  if(other) return '<div class="ubox"><b>긴급 표시</b><p class="sub">이미 긴급으로 표시한 물건이 있습니다('+esc(other.caseNo||other.addr||'')+'). 한 사람당 1건만 걸 수 있으니 그 물건을 먼저 해제해 주세요.</p></div>';
+  return '<div class="ubox"><b>빨리 같이 보고 싶은 물건인가요?</b><input id="urg-reason" maxlength="60" placeholder="왜 급한지 한 줄 (예: 12월 8일 신건, 청구액이 감정가의 3배)"><div class="row"><button class="btn danger" data-act="urg-on">긴급으로 표시</button><span class="sub">한 사람당 1건. 표시한 뒤 카톡방에 링크를 함께 보내 주세요.</span></div></div>'; }
+function reqs(){ return Object.entries(S.props).map(([id,p])=>Object.assign({id},p)).filter(p=>p.stage==='review'&&p.createdBy&&p.createdBy!==S.me&&(!(p.commented||{})[S.me]||(urgOn(p)&&!(p.seen||{})[S.me]))).sort((a,b)=>((urgOn(b)?1:0)-(urgOn(a)?1:0))||(b.createdAt||0)-(a.createdAt||0)); }
+function reqLine(){ const l=reqs(); if(!l.length) return ''; const u=l.filter(urgOn).length;
+  return '<button class="reqline" data-tab="review"><span>'+(u?'<span class="pill crit">긴급 '+u+'</span> ':'')+'<b>검토 요청 '+l.length+'건</b> · 다른 멤버가 광장에 올린 물건</span><span class="go">광장에서 보기</span></button>'; }
 function reqBox(){ const l=reqs(); if(!l.length) return '';
-  return '<div class="reqbox"><b>검토 요청 '+l.length+'건</b><p class="sub">다른 멤버가 광장에 올린 물건입니다. 열어서 의견을 남겨 주세요.</p>'+l.slice(0,5).map(p=>'<button class="rq" data-open="'+p.id+'"><span><b>'+esc(nm(p.createdBy))+'</b>님이 올림 · '+esc(p.addr||p.caseNo||'')+'</span><span class="go">검토하기</span></button>').join('')+(l.length>5?'<p class="sub">외 '+(l.length-5)+'건은 광장 탭에서 볼 수 있습니다.</p>':'')+'</div>'; }
+  return '<div class="reqbox"><b>검토 요청 '+l.length+'건</b><p class="sub">다른 멤버가 광장에 올린 물건입니다. 열어서 의견을 남겨 주세요.</p>'+l.slice(0,5).map(p=>'<button class="rq" data-open="'+p.id+'"><span>'+(urgOn(p)?'<span class="pill crit">긴급</span> ':'')+'<b>'+esc(nm(p.createdBy))+'</b>님이 올림 · '+esc(p.addr||p.caseNo||'')+'</span><span class="go">검토하기</span></button>').join('')+(l.length>5?'<p class="sub">외 '+(l.length-5)+'건은 광장 탭에서 볼 수 있습니다.</p>':'')+'</div>'; }
 function who(p){ const c=Object.keys(p.commented||{}).length; return p.stage==='review'?' · '+(p.createdBy?esc(nm(p.createdBy))+' 올림 · ':'')+'의견 '+c+'/'+S.members.length+'명':''; }
 const goN=p=>p.stage==='review'?Object.values(p.approvals||{}).filter(v=>v==='yes').length:0;
 function cwrap(p,c){ return canDel(p)?'<div class="cwrap">'+c+'<button class="btn danger cdel" data-propdel="'+p.id+'">삭제</button></div>':c; }
 function card(p){ return cwrap(p,card0(p)); }
 function card0(p){
   const pd=pending(p);
-  return '<button class="card" data-open="'+p.id+'"><div class="row between"><span class="row"><span class="pill acc">'+esc(p.type||dealOf(p))+'</span>'+zonePill(p)+(dealOf(p)!=='경매'?'<span class="pill">'+dealOf(p)+'</span>':p.track?'<span class="pill">'+(p.track==='npl'?'NPL 검토':'일반입찰')+'</span>':'')+(goN(p)?'<span class="pill good">임장 가자 '+goN(p)+'</span>':'')+'</span>'+
+  return '<button class="card'+(urgOn(p)?' urgent':'')+'" data-open="'+p.id+'">'+ubar(p)+'<div class="row between"><span class="row"><span class="pill acc">'+esc(p.type||dealOf(p))+'</span>'+zonePill(p)+(dealOf(p)!=='경매'?'<span class="pill">'+dealOf(p)+'</span>':p.track?'<span class="pill">'+(p.track==='npl'?'NPL 검토':'일반입찰')+'</span>':'')+(goN(p)?'<span class="pill good">임장 가자 '+goN(p)+'</span>':'')+'</span>'+
    (p.stage==='review'&&p.createdBy&&p.createdBy!==S.me&&!(p.commented||{})[S.me]?'<span class="pill crit">내 검토 필요</span>':pd.length?'<span class="pill crit">확인 필요 '+pd.length+'</span>':'<span class="pill good">확인 완료</span>')+'</div>'+
    '<div><div class="ttl">'+esc(p.addr||'주소 미입력')+'</div><div class="meta">'+esc(p.caseNo||'')+(isAuc(p)?' · 매각 '+esc(p.saleDate||'미정')+' · 유찰 '+(p.fails||0)+'회':'')+' '+(isAuc(p)?dday(p):'')+who(p)+'</div></div>'+metrics(p,false)+'</button>';
 }
@@ -433,6 +472,7 @@ function detail(p){
   let h='<div class="row between"><button class="btn back" data-act="back">목록으로</button><button class="btn" data-foldall="1">모두 접기</button></div>';
   h+='<div class="row between"><h2>'+esc(p.caseNo)+' <span class="sub">'+esc(p.court||'')+'</span></h2><span class="row"><span class="pill">'+D+'</span><span class="pill acc">'+stageName+'</span></span></div>';
   if(['review','visit','bid'].includes(p.stage)) h+=pd.length?'<div class="alert" role="alert">확인이 필요한 항목 '+pd.length+'건<ul>'+pd.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul></div>':'<div class="alert ok">이 단계에서 확인할 항목을 모두 마쳤습니다.</div>';
+  h+=ubar(p)+urgBox(p);
   if(S.editing) h+=propForm(p);
   else h+='<section class="card"><div class="row between"><h3>기본 정보</h3><button class="btn" data-act="edit">수정</button></div><p>'+esc(p.addr||'주소 미입력')+' <span class="sub">'+esc(p.type||'')+'</span></p>'+(p.note?'<p class="sub">'+esc(p.note)+'</p>':'')+'<dl class="kv">'+
     (A?[['감정가',won(p.appraisal)],['최저가',won(p.minPrice)],['청구금액',won(p.claim)],['채권최고액',won(p.maxLien)],['채권자',esc(p.creditor||'-')+(p.amc?' (AMC)':'')],['유찰',(p.fails||0)+'회'],['매각기일',esc(p.saleDate||'미정')]]:[['시세',won(p.appraisal)],['호가',won(p.minPrice)],['시세 대비',p.appraisal&&p.minPrice?Math.round(p.minPrice/p.appraisal*100)+'%':'-'],['계약 예정일',esc(p.saleDate||'미정')]]).map(x=>'<div><dt>'+x[0]+'</dt><dd>'+x[1]+'</dd></div>').join('')+'</dl></section>'+placeBox(p);
@@ -524,14 +564,27 @@ function recCard(r){ const mine=isMine(r), sk=(r.skip||{})[S.me];
   return '<div class="card'+(mine?' mine':'')+'"><div class="row between"><span class="row">'+(mine?'<span class="pill acc">내 조건</span>':'')+'<span class="pill">'+esc(subOf(r))+'</span>'+zonePill(r)+(r.example?'<span class="pill warn">예시 데이터</span>':'')+'</span>'+dday(r)+'</div>'+
    '<div><div class="ttl">'+esc(r.addr)+'</div><div class="meta">'+esc(r.caseNo)+' · 매각 '+esc(r.saleDate||'미정')+' · 유찰 '+(r.fails||0)+'회'+(r.amc?' · 유동화회사':'')+'</div></div>'+metrics(r,true)+(r.note?'<p class="sub">'+esc(r.note)+'</p>':'')+
    '<div class="row"><button class="btn pri" data-rec="'+r.id+'">광장으로 이동</button><button class="btn'+(sk?' on':'')+'" data-skip="'+r.id+'">'+(sk?'관심없음 취소':'관심없음')+'</button><button class="btn danger" data-recdel="'+r.id+'">삭제</button>'+(skipN(r)?'<span class="sub">관심없음 '+skipN(r)+' / '+S.members.length+'명</span>':'')+(r.src?'<span class="sub" style="margin-left:auto">'+esc(r.src)+'</span>':'')+'</div></div>'; }
-function recView(){ const all=recBase(), l=recList(), hp=hasPrefs(), mine=l.filter(isMine), rest=l.filter(r=>!isMine(r)), sum=prefSummary();
-  let h='<div class="mybox"><div class="row between"><h2>'+esc(S.live?nm(S.me)+'님의 추천':'오늘 추천')+'</h2><button class="btn" data-tab="prefs">'+(hp?'내 조건 바꾸기':'내 조건 설정')+'</button></div>'+
-   (hp?'<div class="row">'+sum.map(x=>'<span class="pill acc">'+esc(x)+'</span>').join('')+'</div><p class="sub">내 조건에 맞는 물건이 맨 위에 나옵니다. 조건은 계정마다 따로 저장됩니다.</p>':'<p class="sub">아직 내 조건이 없어 수집된 물건을 최근 순서로 보여 줍니다. 관심 지역과 용도를 정하면 맞는 물건이 맨 위에 올라옵니다.</p>')+'</div>'+useBar(all)+skipBar();
-  if(!l.length) return h+'<div class="empty">'+useEmpty(all,'보여 줄 추천 물건이 없습니다. 내 조건을 넓히거나 사건번호로 직접 올려 주세요.')+'</div>';
-  if(hp){ h+='<div class="sec"><h2>내 조건에 맞는 물건</h2><span>'+mine.length+'건</span></div>'+(mine.length?'<div class="cards">'+mine.map(recCard).join('')+'</div>':'<div class="empty">이 구분에는 내 조건에 맞는 물건이 없습니다.</div>');
-    if(rest.length) h+='<div class="sec"><h2>그 밖의 수집 물건</h2><span>'+rest.length+'건 · 종류마다 '+((S.prefs||{}).count||10)+'건까지</span></div><div class="cards">'+rest.map(recCard).join('')+'</div>'; }
-  else h+='<div class="cards">'+l.map(recCard).join('')+'</div>';
-  return h; }
+/* ---------- 추천: 수집 회차별 신규·변동, 압축 목록 ---------- */
+function batchDay(){ let b=''; S.recs.forEach(r=>{ [r.addedAt,r.changedAt].forEach(d=>{ if(d&&d>b) b=d; }); }); return b; }
+const isNew=(r,b)=>!!b&&r.addedAt===b, isChg=(r,b)=>!!b&&r.changedAt===b&&r.addedAt!==b;
+const shortAddr=r=>String(r.lot||r.addr||'').replace(/^(서울특별시|서울)\s/,'서울 ').replace(/(특별자치시|특별자치도|광역시|특별시)\s/,' ').replace(/^(경기도|충청남도|충청북도|경상남도|경상북도|전라남도|전라북도|전북특별자치도|강원특별자치도|제주특별자치도|전남광주통합특별시)\s/,'').replace(/\s외\s.*$/,'').replace(/\s+/g,' ').trim();
+function lrow(r,b){ const n=npl(r), pct=r.appraisal&&r.minPrice?Math.round(r.minPrice/r.appraisal*100):0, op=S.recOpen===r.id;
+  return '<div class="lwrap'+(op?' open':'')+'"><button class="lrow" data-lopen="'+r.id+'" aria-expanded="'+op+'"><div class="l1">'+(isNew(r,b)?'<span class="nb">신규</span>':isChg(r,b)?'<span class="nb chg">변동</span>':'')+'<span class="ad">'+esc(shortAddr(r))+'</span><span class="tp">'+esc(subOf(r))+'</span>'+dday(r)+'</div>'+
+   '<div class="l2"><span>최저 <b>'+won(r.minPrice)+'</b>'+(pct?' ('+pct+'%)':'')+'</span><span>청구 '+won(r.claim)+'</span>'+(r.fails?'<span>유찰 '+r.fails+'회</span>':'<span>신건</span>')+(n&&n.label?'<span class="pill '+n.cls+'">NPL 여지 '+esc(n.label)+'</span>':'')+'</div></button>'+
+   (op?'<div class="lbody">'+recCard(r)+'</div>':'')+'</div>'; }
+function recView(){ const hp=hasPrefs(), narrow=hp&&!S.recAll, all=narrow?recBase():recBase().filter(useOK), sum=prefSummary(), b=batchDay();
+  const scope=narrow?all.filter(isMine):all;
+  const groups={new:scope.filter(r=>isNew(r,b)),chg:scope.filter(r=>isChg(r,b)),all:scope};
+  const seg=S.recSeg||(groups.new.length?'new':groups.chg.length?'chg':'all'); if(S.recs.length&&!S.recSeg) S.recSeg=seg;
+  const l=groups[seg]||scope, md=b?(+b.slice(5,7))+'월 '+(+b.slice(8,10))+'일':'';
+  let h='<div class="mybox"><div class="row between"><h2>'+esc(S.live?nm(S.me)+'님의 물건':'추천 물건')+'</h2><button class="btn" data-tab="prefs">'+(hp?'내 조건 바꾸기':'내 조건 설정')+'</button></div>'+
+   (hp?'<p class="sub">내 조건: '+esc(sum.join(' · '))+'</p>':'<p class="sub">아직 내 조건이 없어 수집된 물건을 모두 보여 줍니다. 관심 지역과 용도를 정하면 맞는 물건만 추려집니다.</p>')+
+   (b?'<p class="batch">최근 수집 '+md+' · 매주 월·목 아침 업데이트</p>':'')+'</div>';
+  h+='<div class="row between"><div class="seg" role="tablist" aria-label="목록 구분">'+[['new','신규'],['chg','변동'],['all','전체']].map(([k,t])=>'<button role="tab" data-seg="'+k+'" aria-selected="'+(seg===k)+'">'+t+' <b>'+groups[k].length+'</b></button>').join('')+'</div>'+
+   (hp?'<label class="sub" style="display:flex;gap:6px;align-items:center;white-space:nowrap"><input type="checkbox" data-recall="1"'+(S.recAll?' checked':'')+'>조건 밖도</label>':'')+'</div>';
+  h+=(narrow?'':useBar(recBase()))+skipBar();
+  if(!l.length) return h+'<div class="empty">'+(seg==='new'?'이번 수집에서 새로 들어온 물건이 없습니다. 전체 목록을 확인해 보세요.':seg==='chg'?'이번 수집에서 기일·최저가가 바뀐 물건이 없습니다.':useEmpty(recBase(),'보여 줄 물건이 없습니다. 내 조건을 넓히거나 사건번호로 직접 올려 주세요.'))+'</div>';
+  return h+'<div class="lrows">'+l.slice().sort((x,y)=>(x.saleDate||'9').localeCompare(y.saleDate||'9')).map(r=>lrow(r,b)).join('')+'</div><p class="sub">줄을 누르면 자세한 내용과 "광장으로 이동"이 열립니다. 같이 볼 2~3건만 광장에 올려 주세요.</p>'; }
 function regionChips(){ const c={}; S.recs.forEach(r=>{ const w=(r.addr||'').split(/\s+/); const k=w[0]==='서울'&&w[1]?(w[1].length>2?w[1].replace(/구$/,''):w[1]):w[0]; if(k) c[k]=(c[k]||0)+1; });
   return Object.keys(c).sort((a,b)=>c[b]-c[a]).slice(0,18); }
 function prefsView(){ const f=S.prefs||{}, g=regsOf(f);
@@ -551,6 +604,7 @@ function prefsView(){ const f=S.prefs||{}, g=regsOf(f);
 function openProp(id){ S.open=id; S.editing=false; S.comments=[]; S.photos=[]; S.viewPhoto=null; S.upMsg=''; if(unsubC){unsubC();unsubC=null;} if(unsubP){unsubP();unsubP=null;}
   if(db&&id){ unsubP=db.collection('props/'+id+'/photos').onSnapshot(s=>{S.photos=s.docs.map(d=>Object.assign({id:d.id},d.data())).sort((a,b)=>(a.at||0)-(b.at||0));names(S.photos.map(c=>c.uid));render();},()=>{}); }
   if(db&&id){ unsubC=db.collection('props/'+id+'/comments').onSnapshot(s=>{S.comments=s.docs.map(d=>Object.assign({id:d.id},d.data()));names(S.comments.map(c=>c.uid));render();},()=>{}); }
+  const op=id&&S.props[id]; if(op&&urgOn(op)&&S.me&&op.urgent.by!==S.me&&!(op.seen||{})[S.me]){ op.seen=Object.assign({},op.seen,{[S.me]:Date.now()}); if(db) db.doc('props/'+id).update({seen:{[S.me]:op.seen[S.me]}}).catch(()=>{}); }
   render(true); window.scrollTo(0,0); }
 const val=id=>{const e=$(id);return e?e.value.trim():'';}; const num=id=>{const v=parseFloat(val(id));return isNaN(v)?0:v;};
 document.addEventListener('click',e=>{
@@ -565,6 +619,8 @@ document.addEventListener('click',e=>{
     delete S.props[k]; S.ok='삭제했습니다: '+(pp.caseNo||pp.addr||''); if(S.open===k) return openProp(null); return render(true); }
   const rd=e.target.closest('[data-recdel]'); if(rd){ const k=rd.dataset.recdel; if(rd.dataset.sure!=='1'){ rd.dataset.sure='1'; rd.textContent='한 번 더 누르면 완전히 삭제'; return; } if(db){ db.doc('recs/'+k).delete().catch(fail); } S.recs=S.recs.filter(x=>x.id!==k); S.ok='추천 목록에서 삭제했습니다.'; return render(true); }
   const ub=e.target.closest('[data-use]'); const kb=e.target.closest('[data-skip]'); if(kb){ const r=S.recs.find(x=>x.id===kb.dataset.skip); if(r){ const v=!(r.skip||{})[S.me]; if(db){ db.doc('recs/'+r.id).update({skip:{[S.me]:v}}).catch(fail); } else { r.skip=Object.assign({},r.skip,{[S.me]:v}); render(true); } } return; }
+  const lo=e.target.closest('[data-lopen]'); if(lo){ S.recOpen=S.recOpen===lo.dataset.lopen?null:lo.dataset.lopen; return render(true); }
+  const sg=e.target.closest('[data-seg]'); if(sg){ S.recSeg=sg.dataset.seg; S.recOpen=null; return render(true); }
   const sb=e.target.closest('[data-sub]'); if(sb){ S.sub=sb.dataset.sub; return render(true); }
   if(ub){ S.use=ub.dataset.use; S.sub='all'; try{localStorage.setItem('use-tab',S.use);}catch(_){ } return render(true); }
   const t=e.target.closest('[data-tab],[data-open],[data-act],[data-track],[data-vote],[data-join],[data-result],[data-rec],[data-outcome]'); if(!t) return;
@@ -579,6 +635,8 @@ document.addEventListener('click',e=>{
   if(d.outcome) return upd(id,{outcome:d.outcome});
   switch(d.act){
     case 'skipped': S.showSkipped=!S.showSkipped; return render(true);
+    case 'urg-on': { const why=val('urg-reason'); if(!why){ S.err='왜 급한지 한 줄을 적어 주세요.'; return render(true); } if(myUrgent(id)){ S.err='이미 긴급으로 표시한 물건이 있습니다.'; return render(true); } const pu={urgent:{on:true,by:S.me,reason:why.slice(0,60),at:Date.now()},seen:Object.fromEntries(S.members.map(m=>[m,false]))}; if(db) merge(S.props[id],pu); upd(id,pu); S.ok='긴급으로 표시했습니다. 카톡방에 링크를 함께 보내 주세요.'; return render(true); }
+    case 'urg-off': if(db) merge(S.props[id],{urgent:{on:false}}); upd(id,{urgent:{on:false}}); return render(true);
     case 'add': S.adding=!S.adding; return render(true);
     case 'cancel': S.adding=false; S.editing=false; return render(true);
     case 'edit': S.editing=true; return render(true);
@@ -592,6 +650,7 @@ document.addEventListener('click',e=>{
   }
 });
 document.addEventListener('change',e=>{ const t=e.target,id=S.open;
+  if(t.dataset&&t.dataset.recall){ S.recAll=t.checked; S.recSeg=null; return render(true); }
   if(t.id==='photo-in'){ const f=[...(t.files||[])]; t.value=''; if(!f.length) return; if(!id||!S.props[id]){ S.err='물건을 연 상태에서 사진을 추가해 주세요.'; return render(true); } addPhotos(f); return; }
   if(!id||!S.props[id]) return;
   if(t.dataset.chk) return upd(id,{checks:{[t.dataset.chk]:t.checked}});
